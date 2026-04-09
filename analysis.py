@@ -9,10 +9,9 @@ Usage:
 import os
 import pandas as pd
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from scipy import stats
 from sqlalchemy import create_engine
 
@@ -92,32 +91,54 @@ def compute_kpis(data_dict):
     merged = df_oi.merge(df_p, on='product_id').merge(df_o, on='order_id').merge(df_c, on='customer_id')
     merged['revenue'] = merged['quantity'] * merged['unit_price']
     merged['order_date'] = pd.to_datetime(merged['order_date'])
+    merged['registration_date'] = pd.to_datetime(merged['registration_date'])
 
-    # KPI 1: Total Revenue
-    total_revenue = merged['revenue'].sum()
+    # KPI 1: Monthly Revenue Growth (MoM)
+    monthly_revenue = merged.groupby(merged['order_date'].dt.to_period('M'))['revenue'].sum()
+    monthly_revenue = monthly_revenue.sort_index()
+    if len(monthly_revenue) >= 2:
+        current_month = monthly_revenue.iloc[-1]
+        previous_month = monthly_revenue.iloc[-2]
+        mom_growth = ((current_month - previous_month) / previous_month) * 100 if previous_month != 0 else 0
+    else:
+        mom_growth = 0
 
-    # KPI 2: Average Order Value
+    # KPI 2: Average Order Value (AOV)
     avg_order_value = merged.groupby('order_id')['revenue'].sum().mean()
 
-    # KPI 3: Customer Retention Rate (repeat purchase rate)
-    customer_order_counts = merged.groupby('customer_id')['order_id'].nunique()
-    repeat_customers = (customer_order_counts > 1).sum()
-    retention_rate = (repeat_customers / len(customer_order_counts)) * 100
+    # KPI 3: Regional Market Share (Amman)
+    total_revenue = merged['revenue'].sum()
+    amman_revenue = merged[merged['city'] == 'Amman']['revenue'].sum()
+    amman_market_share = (amman_revenue / total_revenue) * 100 if total_revenue != 0 else 0
 
-    # KPI 4: Monthly Active Users (time-based)
-    merged['month'] = merged['order_date'].dt.to_period('M')
-    monthly_active_users = merged.groupby('month')['customer_id'].nunique()
+    # KPI 4: Weekly Sales Velocity (Peak Day)
+    merged['day_of_week'] = merged['order_date'].dt.day_name()
+    weekly_velocity = merged.groupby('day_of_week')['order_id'].nunique()
+    peak_day = weekly_velocity.idxmax()
+    peak_orders = weekly_velocity.max()
 
-    # KPI 5: Cohort Revenue Growth (time-based, by registration month)
-    merged['registration_month'] = pd.to_datetime(merged['registration_date']).dt.to_period('M')
-    cohort_revenue = merged.groupby('registration_month')['revenue'].sum()
+    # KPI 5: 30-Day New Customer Retention
+    # New customers: first order within 30 days of registration
+    merged['days_since_registration'] = (merged['order_date'] - merged['registration_date']).dt.days
+    new_customers = merged[merged['days_since_registration'] <= 30]
+    # Retention: customers with >1 order within 30 days of first order
+    first_orders = new_customers.groupby('customer_id')['order_date'].min().reset_index()
+    first_orders.columns = ['customer_id', 'first_order_date']
+    new_customers = new_customers.merge(first_orders, on='customer_id')
+    new_customers['days_since_first'] = (new_customers['order_date'] - new_customers['first_order_date']).dt.days
+    repeat_within_30 = new_customers[(new_customers['days_since_first'] > 0) & (new_customers['days_since_first'] <= 30)]
+    unique_new_customers = new_customers['customer_id'].nunique()
+    unique_repeat_customers = repeat_within_30['customer_id'].nunique()
+    retention_rate = (unique_repeat_customers / unique_new_customers) * 100 if unique_new_customers != 0 else 0
 
     return {
-        "Total Revenue": total_revenue,
+        "MoM Revenue Growth": mom_growth,
         "Average Order Value": avg_order_value,
-        "Customer Retention Rate": retention_rate,
-        "Monthly Active Users": monthly_active_users,
-        "Cohort Revenue Growth": cohort_revenue,
+        "Amman Market Share": amman_market_share,
+        "Peak Sales Day": peak_day,
+        "30-Day Retention Rate": retention_rate,
+        "monthly_revenue": monthly_revenue,
+        "weekly_velocity": weekly_velocity,
         "merged_data": merged
     }
     
@@ -164,7 +185,7 @@ def run_statistical_tests(kpi_results):
 
 
 def create_visualizations(kpi_results, stat_results):
-    """Create publication-quality charts for all 5 KPIs.
+    """Create publication-quality charts for all 5 KPIs using Plotly.
 
     Args:
         kpi_results: dict from compute_kpis()
@@ -174,62 +195,105 @@ def create_visualizations(kpi_results, stat_results):
         None
 
     Side effects:
-        Saves at least 5 PNG files to the output/ directory.
-        Each chart should have a descriptive title stating the finding,
-        proper axis labels, and annotations where appropriate.
+        Saves an interactive HTML dashboard to output/dashboard.html
     """
-    # TODO: Create one visualization per KPI, saved to output/
-    # TODO: Use appropriate chart types (bar, line, scatter, heatmap, etc.)
-    # TODO: Ensure titles state the insight, not just the data
-    sns.set_theme(style="whitegrid")
-    sns.set_palette("colorblind")
-    
-    # KPI 1: Total Revenue
-    plt.figure(figsize=(10, 6))
-    plt.bar(["Total Revenue"], [kpi_results['Total Revenue']], color='steelblue', width=0.5)
-    plt.title("Total Platform Revenue: 45,147 JOD")
-    plt.ylabel("Revenue (JOD)")
-    plt.ylim(0, kpi_results['Total Revenue'] * 1.1)
-    plt.savefig("output/kpi_1_total_revenue.png")
+    # Create subplots for the dashboard
+    fig = make_subplots(
+        rows=3, cols=2,
+        subplot_titles=(
+            f"MoM Revenue Growth: {kpi_results['MoM Revenue Growth']:.1f}%",
+            f"Average Order Value: {kpi_results['Average Order Value']:.2f} JOD",
+            f"Amman Market Share: {kpi_results['Amman Market Share']:.1f}%",
+            f"Peak Sales Day: {kpi_results['Peak Sales Day']}",
+            f"30-Day Retention Rate: {kpi_results['30-Day Retention Rate']:.1f}%",
+            "Weekly Sales Velocity"
+        ),
+        specs=[
+            [{"type": "indicator"}, {"type": "indicator"}],
+            [{"type": "indicator"}, {"type": "indicator"}],
+            [{"type": "indicator"}, {"type": "bar"}]
+        ]
+    )
+
+    # KPI 1: MoM Revenue Growth
+    fig.add_trace(
+        go.Indicator(
+            mode="number+delta",
+            value=kpi_results['MoM Revenue Growth'],
+            delta={'reference': 15, 'relative': True},
+            title={"text": "MoM Growth %"},
+            domain={'row': 0, 'column': 0}
+        ),
+        row=1, col=1
+    )
 
     # KPI 2: Average Order Value
-    plt.figure(figsize=(10, 6))
-    plt.bar(["Average Order Value"], [kpi_results['Average Order Value']], color='darkgreen', width=0.5)
-    plt.title("Average Order Value Across Market")
-    plt.ylabel("Value (JOD)")
-    plt.ylim(0, kpi_results['Average Order Value'] * 1.2)
-    plt.savefig("output/kpi_2_average_order_value.png")
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=kpi_results['Average Order Value'],
+            title={"text": "AOV (JOD)"},
+            domain={'row': 0, 'column': 1}
+        ),
+        row=1, col=2
+    )
 
-    # KPI 3: Customer Retention Rate
-    plt.figure(figsize=(10, 6))
-    retention = kpi_results['Customer Retention Rate']
-    colors_retention = ['#2ecc71' if retention > 30 else '#e74c3c']
-    plt.bar(["Retention Rate"], [retention], color=colors_retention, width=0.5)
-    plt.title(f"Customer Retention Rate: {retention:.1f}%")
-    plt.ylabel("Percentage (%)")
-    plt.ylim(0, 100)
-    plt.axhline(y=50, color='gray', linestyle='--', alpha=0.5, label='Industry Average')
-    plt.legend()
-    plt.savefig("output/kpi_3_customer_retention.png")
+    # KPI 3: Amman Market Share
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=kpi_results['Amman Market Share'],
+            title={"text": "Amman Share %"},
+            domain={'row': 1, 'column': 0}
+        ),
+        row=2, col=1
+    )
 
-    # KPI 4: Monthly Active Users (time-based)
-    plt.figure(figsize=(10, 6))
-    kpi_results['Monthly Active Users'].plot(kind='line', marker='o', linewidth=2, color='purple')
-    plt.title("Monthly Active Users Show Growth Trend")
-    plt.xlabel("Month")
-    plt.ylabel("Number of Active Users")
-    plt.savefig("output/kpi_4_monthly_active_users.png")
+    # KPI 4: Peak Sales Day
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=kpi_results['weekly_velocity'][kpi_results['Peak Sales Day']],
+            title={"text": f"Orders on {kpi_results['Peak Sales Day']}"},
+            domain={'row': 1, 'column': 1}
+        ),
+        row=2, col=2
+    )
 
-    # KPI 5: Cohort Revenue Growth (time-based)
-    plt.figure(figsize=(10, 6))
-    kpi_results['Cohort Revenue Growth'].plot(kind='bar', color='coral')
-    plt.title("Revenue by Customer Cohort (Registration Month)")
-    plt.xlabel("Registration Month")
-    plt.ylabel("Total Cohort Revenue (JOD)")
-    plt.xticks(rotation=45)
-    plt.savefig("output/kpi_5_cohort_revenue.png")
+    # KPI 5: 30-Day Retention Rate
+    fig.add_trace(
+        go.Indicator(
+            mode="number",
+            value=kpi_results['30-Day Retention Rate'],
+            title={"text": "Retention %"},
+            domain={'row': 2, 'column': 0}
+        ),
+        row=3, col=1
+    )
 
-    plt.close('all')
+    # Weekly Sales Velocity Bar Chart
+    days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    weekly_data = kpi_results['weekly_velocity'].reindex(days_order)
+    fig.add_trace(
+        go.Bar(
+            x=weekly_data.index,
+            y=weekly_data.values,
+            marker_color='lightblue',
+            name='Orders per Day'
+        ),
+        row=3, col=2
+    )
+
+    # Update layout
+    fig.update_layout(
+        title_text="Amman Digital Market KPI Dashboard",
+        showlegend=False,
+        height=800
+    )
+
+    # Save as HTML
+    fig.write_html("output/dashboard.html")
+    print("Interactive dashboard saved to output/dashboard.html")
     
 
 

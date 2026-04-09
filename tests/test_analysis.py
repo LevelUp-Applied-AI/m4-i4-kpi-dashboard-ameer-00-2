@@ -41,11 +41,11 @@ def test_kpi_computation_returns_expected_keys():
     data = extract_data(engine)
     kpis = compute_kpis(data)
     expected_kpi_names = [
-        "Total Revenue",
+        "MoM Revenue Growth",
         "Average Order Value", 
-        "Customer Retention Rate", 
-        "Monthly Active Users", 
-        "Cohort Revenue Growth"]
+        "Amman Market Share", 
+        "Peak Sales Day", 
+        "30-Day Retention Rate"]
     for kpi in expected_kpi_names:
         assert kpi in kpis, f"Missing KPI: {kpi}"
 
