@@ -28,12 +28,35 @@ Design a KPI framework, compute metrics from the Amman Digital Market database, 
 4. **`output/`** — Chart PNG files (at least 5, one per KPI)
 5. **`tests/test_analysis.py`** — Your own tests (3 required)
 
-## Submit
+## Challenge Extensions
 
-1. Create branch `integration-4/kpi-dashboard`
-2. Complete all deliverables
-3. Push and open a PR to `main`
-4. Paste your PR URL into TalentLMS → Module 4 → Integration 4
+### Tier 1: Interactive Dashboard with Plotly
+- **File**: `analysis.py` (updated)
+- **Output**: `output/dashboard.html` - Standalone interactive HTML dashboard
+- **Features**: Hover tooltips, zoom, pan, responsive design
+- **Run**: `python analysis.py`
+
+### Tier 2: Automated KPI Monitoring Script
+- **File**: `kpi_monitor.py`
+- **Config**: `config.json` - Thresholds and filter options
+- **Output**: `output/kpi_monitor_dashboard.html` - Monitoring dashboard with gauges
+- **Features**: Green/yellow/red status indicators, dropdown filters, gauge visualizations
+- **Run**: `python kpi_monitor.py`
+- **Tests**: `tests/test_kpi_monitor.py`
+
+### Tier 3: Multi-Page Analytical Report with Plotly Dash
+- **File**: `app.py`
+- **Features**: 
+  - Page 1: KPI overview with gauge indicators
+  - Page 2: Time-series deep dive with date range selector
+  - Page 3: Cohort comparison with drill-down capability
+  - Cross-filtering between pages
+- **Run**: `python app.py` (starts on http://127.0.0.1:8050)
+
+### Additional Dependencies
+```bash
+pip install plotly dash
+```
 
 ---
 

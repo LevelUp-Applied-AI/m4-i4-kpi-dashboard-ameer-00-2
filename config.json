@@ -1,0 +1,16 @@
+{
+  "thresholds": {
+    "mom_growth": 15.0,
+    "aov": 45.0,
+    "amman_share": 65.0,
+    "retention": 20.0
+  },
+  "filters": {
+    "cities": ["Amman", "Irbid", "Zarqa"],
+    "categories": ["Electronics", "Clothing", "Home", "Books"],
+    "date_range": {
+      "from": "2023-01-01",
+      "to": "2024-12-31"
+    }
+  }
+}

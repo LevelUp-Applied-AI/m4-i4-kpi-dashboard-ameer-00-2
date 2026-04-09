@@ -7,3 +7,6 @@ statsmodels
 sqlalchemy
 psycopg[binary]
 pytest
+psycopg2-binary
+plotly
+dash
